@@ -1,0 +1,29 @@
+{
+  "name": "charybdis",
+  "version": "1.0.0",
+  "description": "A library to support committing a CIP-68 style reference token to a Hydra head and update the metadata based on final Hydra state.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lerna-Labs/charybdis.git"
+  },
+  "keywords": [
+    "hydra",
+    "cardano",
+    "cip68"
+  ],
+  "author": "Adam K. Dean <adam@crypto2099.io>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Lerna-Labs/charybdis/issues"
+  },
+  "homepage": "https://github.com/Lerna-Labs/charybdis#readme",
+  "dependencies": {
+    "@lucid-evolution/lucid": "^0.4.10",
+    "axios": "^1.7.8",
+    "dotenv": "^16.4.5"
+  }
+}
