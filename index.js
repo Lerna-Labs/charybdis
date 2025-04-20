@@ -5,6 +5,22 @@ const axios = require("axios");
 
 let lucid;
 
+async function sendTx(txHex, HYDRA_NODE_URL) {
+    try {
+        const response = await axios.post(`${HYDRA_NODE_URL}/cardano-transaction`, {
+            type: "Tx ConwayEra",
+            description: "",
+            cborHex: txHex
+        });
+
+        console.log(`Did we submit?`, response);
+        return response;
+    } catch (e) {
+        console.error(`Error submitting?`, e);
+    }
+
+}
+
 async function getUsableUTxO(criteria = {}, HYDRA_NODE_URL) {
     /**
      * Queries the Hydra node's UTxO set and identifies a UTxO that matches the given criteria.
@@ -20,6 +36,8 @@ async function getUsableUTxO(criteria = {}, HYDRA_NODE_URL) {
 
         console.log("Hydra UTxOs:", utxos);
 
+        const return_utxo = [];
+
         // Iterate over the UTxOs to find a match
         for (const [utxoId, utxoDetails] of Object.entries(utxos)) {
             const {address, value} = utxoDetails;
@@ -34,18 +52,18 @@ async function getUsableUTxO(criteria = {}, HYDRA_NODE_URL) {
                 const policy = value[criteria.policyId];
                 if (policy && policy[criteria.tokenName] && policy[criteria.tokenName] > 0) {
                     console.log("Found usable UTxO:", utxoDetails);
-                    return {utxoId, ...utxoDetails};
+                    return_utxo.push({utxoId, ...utxoDetails});
                 }
             } else {
                 // If no criteria provided, return the first UTxO
                 console.log("Returning first UTxO:", utxoDetails);
-                return {utxoId, ...utxoDetails};
+                return_utxo.push({utxoId, ...utxoDetails});
             }
         }
 
-        if (usableUTxO) {
-            console.log("Found usable UTxO:", usableUTxO);
-            return usableUTxO;
+        if (return_utxo.length) {
+            console.log("Found usable UTxO:", return_utxo);
+            return return_utxo;
         } else {
             console.log("No suitable UTxO found.");
             return null;
@@ -85,8 +103,6 @@ const CIP68DatumSchema = Data.Object({
 const CIP68Datum = CIP68DatumSchema;
 
 function validateMetadata(metadata) {
-    console.log("Validating metadata:", metadata);
-
     const metadataMap = new Map();
 
     Object.entries(metadata).map(([key, value]) => {
@@ -124,21 +140,25 @@ function validateMetadata(metadata) {
 }
 
 function hydraToLucidValue(value) {
-    const lucid_value = {
-        lovelace: BigInt(value.lovelace)
-    };
+    try {
+        const lucid_value = {
+            lovelace: BigInt(value.lovelace)
+        };
 
-    Object.entries(value).forEach(([key, tokens]) => {
-        if (key === "lovelace") {
-            return;
-        }
+        Object.entries(value).forEach(([key, tokens]) => {
+            if (key === "lovelace") {
+                return;
+            }
 
-        Object.entries(tokens).forEach(([token_name, quantity]) => {
-            lucid_value[`${key}${token_name}`] = BigInt(quantity);
-        })
-    });
+            Object.entries(tokens).forEach(([token_name, quantity]) => {
+                lucid_value[`${key}${token_name}`] = BigInt(quantity);
+            })
+        });
 
-    return lucid_value;
+        return lucid_value;
+    } catch (e) {
+        console.error(`Could not convert from hydra to lucid value!`);
+    }
 
 }
 
@@ -211,12 +231,11 @@ async function updateMetadata(policyId, tokenName, updatedMetadata, utxo, signin
      */
     if (!lucid) throw new Error("Lucid is not initialized.");
 
-    // const datum = Data.to(updatedMetadata);
     let datum;
     try {
         const transformedMetadata = validateMetadata(updatedMetadata);
         datum = Data.to(
-            {metadata: transformedMetadata, version: 1n},
+            {metadata: transformedMetadata, version: 3n},
             CIP68Datum,
         );
         console.log(`Datum is`, datum);
@@ -227,29 +246,31 @@ async function updateMetadata(policyId, tokenName, updatedMetadata, utxo, signin
 
     lucid.selectWallet.fromPrivateKey(signing_key);
 
-    const output_token = hydraToLucidValue(utxo.value);
-    delete output_token.lovelace;
-
     const tx = await lucid
         .newTx()
-        .collectFrom([hydraToLucidTx(utxo)])
+        .collectFrom(utxo)
         .pay.ToAddressWithData(
-            utxo.address,
+            utxo[0].address,
             {kind: "inline", value: datum},
-            output_token
+            {
+                [`${policyId}${tokenName}`]: BigInt(1)
+            }
         )
         .complete()
 
-    console.log(tx.toCBOR());
-
     const signedTx = await tx.sign.withWallet().complete();
-    console.log(`Signed Tx`, signedTx.toCBOR());
+    return signedTx.toCBOR();
 }
 
 
 module.exports = {
     initializeLucid,
     createReferenceToken,
+    CIP68Datum,
+    validateMetadata,
     updateMetadata,
-    getUsableUTxO
+    getUsableUTxO,
+    sendTx,
+    hydraToLucidTx,
+    hydraToLucidValue
 };
